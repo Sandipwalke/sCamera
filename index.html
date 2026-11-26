@@ -303,6 +303,27 @@
     </div>
   </aside>
 
+  <!-- First-Visit Add to Home Screen Popup -->
+  <aside id="a2hs-popup" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="a2hs-title">
+    <div class="modal-panel a2hs-panel">
+      <div class="a2hs-hero">
+        <img src="./icons/icon-192.png" alt="sCamera App Icon" class="a2hs-icon">
+        <div>
+          <h2 id="a2hs-title">Add sCamera to Home Screen</h2>
+          <p class="modal-subtitle">Install as an offline retro camera app with instant launch</p>
+        </div>
+        <button id="btn-a2hs-close" class="close-btn" type="button" aria-label="Close Install Prompt">✕</button>
+      </div>
+      <p id="a2hs-instructions" class="a2hs-instructions">
+        Add sCamera to your home screen for full-screen viewfinder mode and offline access.
+      </p>
+      <div class="a2hs-actions">
+        <button id="btn-a2hs-dismiss" class="btn-secondary" type="button">Not Now</button>
+        <button id="btn-a2hs-install" class="btn-primary" type="button">Add to Home Screen</button>
+      </div>
+    </div>
+  </aside>
+
   <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
 
   <script type="module" src="./js/app.js"></script>

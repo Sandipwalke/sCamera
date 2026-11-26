@@ -140,6 +140,11 @@ class RetroCameraApp {
       btnLbDownload: $('btn-lb-download'),
       btnLbDelete: $('btn-lb-delete'),
       btnCloseLightbox: $('btn-close-lightbox'),
+      a2hsPopup: $('a2hs-popup'),
+      a2hsInstructions: $('a2hs-instructions'),
+      btnA2hsInstall: $('btn-a2hs-install'),
+      btnA2hsDismiss: $('btn-a2hs-dismiss'),
+      btnA2hsClose: $('btn-a2hs-close'),
       toast: $('toast'),
     };
   }
@@ -488,6 +493,7 @@ class RetroCameraApp {
       if (
         e.code === 'Space' &&
         document.activeElement?.tagName !== 'INPUT' &&
+        this.el.a2hsPopup.classList.contains('hidden') &&
         this.el.labModal.classList.contains('hidden') &&
         this.el.filtersModal.classList.contains('hidden') &&
         this.el.galleryModal.classList.contains('hidden') &&
@@ -603,31 +609,88 @@ class RetroCameraApp {
       this._showToast('Frame deleted');
     });
 
-    // PWA Install Prompt
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      this.deferredPrompt = e;
-      this.el.btnInstall.classList.remove('hidden');
-    });
-    this.el.btnInstall.addEventListener('click', async () => {
-      if (!this.deferredPrompt) return;
+    // PWA Install Prompt & First-Visit Add to Home Screen Popup
+    const A2HS_KEY = 'scamera.a2hsPrompted.v1';
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+
+    const updateA2hsCopy = () => {
+      if (this.deferredPrompt) {
+        this.el.a2hsInstructions.textContent =
+          'Install sCamera on your home screen for full-screen viewfinder mode, offline filters, and local gallery access.';
+        this.el.btnA2hsInstall.textContent = 'Add to Home Screen';
+      } else if (isIOS) {
+        this.el.a2hsInstructions.innerHTML =
+          'On iPhone/iPad Safari, tap the <strong>Share (↑)</strong> button at the bottom and choose <strong>Add to Home Screen</strong>.';
+        this.el.btnA2hsInstall.textContent = 'Got It';
+      } else {
+        this.el.a2hsInstructions.textContent =
+          'To add sCamera as an app, tap your browser menu (⋮) or Install icon (⊕) and select "Install app" or "Add to Home Screen".';
+        this.el.btnA2hsInstall.textContent = 'Got It';
+      }
+    };
+
+    const dismissA2hs = () => {
+      try {
+        localStorage.setItem(A2HS_KEY, '1');
+      } catch {
+        // ignore storage errors
+      }
+      this.el.a2hsPopup.classList.add('hidden');
+    };
+
+    const triggerNativeInstall = async () => {
+      if (!this.deferredPrompt) {
+        dismissA2hs();
+        return;
+      }
       this.deferredPrompt.prompt();
       const { outcome } = await this.deferredPrompt.userChoice;
       if (outcome === 'accepted') {
         this.el.btnInstall.classList.add('hidden');
       }
       this.deferredPrompt = null;
+      dismissA2hs();
+    };
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.deferredPrompt = e;
+      this.el.btnInstall.classList.remove('hidden');
+      updateA2hsCopy();
     });
+
+    this.el.btnInstall.addEventListener('click', triggerNativeInstall);
+    this.el.btnA2hsInstall.addEventListener('click', triggerNativeInstall);
+    this.el.btnA2hsDismiss.addEventListener('click', dismissA2hs);
+    this.el.btnA2hsClose.addEventListener('click', dismissA2hs);
+    this.el.a2hsPopup.addEventListener('click', (e) => {
+      if (e.target === this.el.a2hsPopup) dismissA2hs();
+    });
+
     window.addEventListener('appinstalled', () => {
       this.el.btnInstall.classList.add('hidden');
+      dismissA2hs();
       this._showToast('sCamera installed as PWA');
     });
 
-    // Detect iOS Safari standalone tip
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
     if (isIOS && !isStandalone) {
       this.el.iosTip.classList.remove('hidden');
+    }
+
+    // Show Add to Home Screen popup automatically on very first visit
+    let alreadyPrompted = false;
+    try {
+      alreadyPrompted = Boolean(localStorage.getItem(A2HS_KEY));
+    } catch {
+      alreadyPrompted = false;
+    }
+    if (!isStandalone && !alreadyPrompted) {
+      setTimeout(() => {
+        if (!this.el.labModal.classList.contains('hidden')) return;
+        updateA2hsCopy();
+        this.el.a2hsPopup.classList.remove('hidden');
+      }, 900);
     }
 
     // Resize canvas resolution smoothly

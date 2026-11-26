@@ -1168,3 +1168,41 @@ input[type="range"]::-webkit-slider-thumb {
   z-index: 250;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
 }
+
+/* Add to Home Screen Popup */
+.a2hs-panel {
+  max-width: 420px;
+  padding: 16px;
+  gap: 12px;
+}
+.a2hs-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.a2hs-hero h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+.a2hs-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  border: 1px solid var(--border-bright);
+  flex-shrink: 0;
+}
+.a2hs-instructions {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  background: #131110;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.a2hs-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
