@@ -1,4 +1,4 @@
-const CACHE_NAME = 'scamera-cache-v4';
+const CACHE_NAME = 'scamera-cache-v5';
 
 const APP_SHELL = [
   './',

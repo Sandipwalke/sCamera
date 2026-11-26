@@ -90,6 +90,8 @@ class RetroCameraApp {
       filterCategories: $('filter-categories'),
       btnBrowseFilters: $('btn-browse-filters'),
       filterTotalCount: $('filter-total-count'),
+      btnFilmPrev: $('btn-film-prev'),
+      btnFilmNext: $('btn-film-next'),
       carousel: $('filter-carousel'),
       filtersModal: $('filters-modal'),
       filtersModalSub: $('filters-modal-sub'),
@@ -368,6 +370,13 @@ class RetroCameraApp {
     this.el.carousel.querySelectorAll('.filter-chip').forEach((chip) => {
       this.carouselObserver.observe(chip);
     });
+    this._pulseFilmAdvance();
+  }
+
+  _pulseFilmAdvance() {
+    this.el.carousel.classList.remove('film-advancing');
+    void this.el.carousel.offsetWidth;
+    this.el.carousel.classList.add('film-advancing');
   }
 
   _openFilterCatalog() {
@@ -479,6 +488,12 @@ class RetroCameraApp {
     this.el.btnLeakCycle.addEventListener('click', () => this._cycleLightLeak());
 
     this.el.btnBrowseFilters.addEventListener('click', () => this._openFilterCatalog());
+    this.el.btnFilmPrev.addEventListener('click', () => {
+      this.el.carousel.scrollBy({ left: -280, behavior: 'smooth' });
+    });
+    this.el.btnFilmNext.addEventListener('click', () => {
+      this.el.carousel.scrollBy({ left: 280, behavior: 'smooth' });
+    });
     this.el.btnCloseFilters.addEventListener('click', () => this.el.filtersModal.classList.add('hidden'));
     this.el.filtersModal.addEventListener('click', (e) => {
       if (e.target === this.el.filtersModal) this.el.filtersModal.classList.add('hidden');
@@ -712,6 +727,8 @@ class RetroCameraApp {
     if (this.settings.soundEnabled) shutterAudio.playDialClick();
     this._persistSettings();
     this._syncUI();
+    const chip = this.el.carousel.querySelector(`[data-filter-id="${id}"]`);
+    chip?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
 
   _cycleAspect() {
