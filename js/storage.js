@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   frameStyle: 'none', // 'none' | 'polaroid' | '35mm'
   gridEnabled: true,
   soundEnabled: true,
+  autoSaveDevice: true,
   timerSeconds: 0,
   facingMode: 'environment',
   rollCounter: 1,

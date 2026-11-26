@@ -97,6 +97,7 @@ class RetroCameraApp {
       vignetteVal: $('vignette-val'),
       leakSlider: $('leak-slider'),
       leakVal: $('leak-val'),
+      btnAutosaveToggle: $('btn-autosave-toggle'),
       btnSoundToggle: $('btn-sound-toggle'),
       storageSummary: $('storage-summary'),
       btnNewRoll: $('btn-new-roll'),
@@ -235,6 +236,12 @@ class RetroCameraApp {
     });
     this.el.leakSlider.addEventListener('input', (e) => {
       this.settings.lightLeakIntensity = parseFloat(e.target.value);
+      this._persistSettings();
+      this._syncUI();
+    });
+
+    this.el.btnAutosaveToggle.addEventListener('click', () => {
+      this.settings.autoSaveDevice = !this.settings.autoSaveDevice;
       this._persistSettings();
       this._syncUI();
     });
@@ -425,7 +432,9 @@ class RetroCameraApp {
     this.el.leakSlider.value = this.settings.lightLeakIntensity;
     this.el.leakVal.textContent = `${Math.round(this.settings.lightLeakIntensity * 100)}%`;
 
-    // Sound toggle
+    // Auto-save & Sound toggles
+    this.el.btnAutosaveToggle.textContent = this.settings.autoSaveDevice ? 'ON' : 'OFF';
+    this.el.btnAutosaveToggle.classList.toggle('active', this.settings.autoSaveDevice);
     this.el.btnSoundToggle.textContent = this.settings.soundEnabled ? 'ON' : 'OFF';
     this.el.btnSoundToggle.classList.toggle('active', this.settings.soundEnabled);
 
@@ -716,7 +725,15 @@ class RetroCameraApp {
       this._persistSettings();
       this._syncUI();
       await this._refreshGallery();
-      this._showToast(`Saved ${filter.name} • EXP ${String(frameNumber).padStart(3, '0')}`);
+
+      const filename = `sCamera_${filter.id}_EXP${String(frameNumber).padStart(3, '0')}.jpg`;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+      if (this.settings.autoSaveDevice && !isIOS) {
+        this._downloadBlob(blob, filename);
+        this._showToast(`Saved ${filter.name} to Gallery & Device`);
+      } else {
+        this._showToast(`Saved ${filter.name} • EXP ${String(frameNumber).padStart(3, '0')}`);
+      }
     } catch (err) {
       console.error('Capture error:', err);
       this._showToast('Failed to develop shot');
@@ -734,10 +751,10 @@ class RetroCameraApp {
   }
 
   async _refreshGallery() {
+    const photos = await photoStore.listPhotos();
     this.objectUrls.forEach((u) => URL.revokeObjectURL(u));
     this.objectUrls = [];
-
-    this.photos = await photoStore.listPhotos();
+    this.photos = photos;
     this.el.galleryBadge.textContent = String(this.photos.length);
     this.el.galleryCountSub.textContent = `${this.photos.length} developed shot${this.photos.length === 1 ? '' : 's'}`;
 
@@ -811,18 +828,23 @@ class RetroCameraApp {
     this.el.btnLbFav.classList.toggle('active', fav);
   }
 
+  _downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }
+
   async _downloadActivePhoto() {
     if (!this.activePhotoId) return;
     const full = await photoStore.getPhoto(this.activePhotoId);
     if (!full) return;
-    const url = URL.createObjectURL(full.blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `sCamera_${full.filterId}_EXP${String(full.frameNumber).padStart(3, '0')}.jpg`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    const filename = `sCamera_${full.filterId}_EXP${String(full.frameNumber).padStart(3, '0')}.jpg`;
+    this._downloadBlob(full.blob, filename);
   }
 
   async _shareActivePhoto() {
@@ -857,7 +879,8 @@ class RetroCameraApp {
   async _registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
     try {
-      await navigator.serviceWorker.register('./sw.js', { scope: './' });
+      const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+      reg.update().catch(() => {});
     } catch (err) {
       console.warn('Service worker registration failed:', err);
     }
