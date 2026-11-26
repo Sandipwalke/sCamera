@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#171615">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="sCamera — Tactile retro film camera PWA with 9 authentic vintage filters, WebGL shaders, quartz date stamp, and offline film roll.">
+  <title>sCamera — Retro Film Camera</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" type="image/svg+xml" href="./icons/icon.svg">
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./styles/main.css">
+</head>
+<body>
+  <div id="app" class="camera-shell">
+    <!-- Screen-flash overlay for front camera / visual feedback -->
+    <div id="flash-overlay" class="flash-overlay" aria-hidden="true"></div>
+
+    <!-- Top Brushed Metal Plate -->
+    <header class="top-plate">
+      <div class="brand-cluster">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div class="brand-text">
+          <span class="brand-name">sCamera</span>
+          <span id="roll-counter" class="led-counter" title="Film Roll & Exposure Counter">R01 • EXP 001</span>
+        </div>
+      </div>
+
+      <div class="top-controls">
+        <button id="btn-aspect" class="hw-pill" type="button" title="Cycle Aspect Ratio">4:3</button>
+        <button id="btn-flash" class="hw-pill" type="button" title="Flash Mode">⚡ OFF</button>
+        <button id="btn-timer" class="hw-pill" type="button" title="Self-Timer">⏱ OFF</button>
+        <button id="btn-grid" class="hw-pill active" type="button" title="Toggle Viewfinder Grid">GRID</button>
+        <button id="btn-install" class="hw-pill install-pill hidden" type="button" title="Install App">INSTALL</button>
+        <button id="btn-lab" class="hw-pill lab-pill" type="button" title="Retro Lab & Settings" aria-label="Open Retro Lab">LAB ⚙</button>
+      </div>
+    </header>
+
+    <!-- Main Viewfinder Area -->
+    <main class="viewfinder-well">
+      <div id="viewfinder-stage" class="viewfinder-stage ratio-4-3">
+        <video id="camera-video" playsinline autoplay muted class="hidden-media"></video>
+        <canvas id="viewfinder-canvas" class="viewfinder-canvas"></canvas>
+
+        <!-- Viewfinder Corner Brackets & Rule of Thirds Grid -->
+        <div id="vf-grid" class="vf-grid">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div class="vf-brackets" aria-hidden="true">
+          <i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
+        </div>
+
+        <!-- Live Quartz Date Stamp Preview -->
+        <div id="vf-datestamp" class="vf-datestamp" aria-hidden="true">'26 11 26</div>
+
+        <!-- Active Frame / Leak / Filter HUD -->
+        <div class="vf-hud-top">
+          <span id="hud-filter" class="hud-chip">GOLD 200</span>
+          <span id="hud-frame" class="hud-chip hidden">POLAROID</span>
+          <span id="hud-leak" class="hud-chip hidden">LEAK</span>
+        </div>
+
+        <!-- Imported Image Mode Banner -->
+        <div id="imported-banner" class="imported-banner hidden">
+          <span>PHOTO EDIT MODE</span>
+          <button id="btn-return-live" type="button">LIVE CAM</button>
+        </div>
+
+        <!-- Tap-to-focus Reticle -->
+        <div id="focus-reticle" class="focus-reticle" aria-hidden="true"></div>
+
+        <!-- Self-Timer Countdown -->
+        <div id="timer-countdown" class="timer-countdown hidden" aria-live="assertive">3</div>
+
+        <!-- Shutter Curtain Blink -->
+        <div id="shutter-curtain" class="shutter-curtain" aria-hidden="true"></div>
+
+        <!-- Standby / No-Camera Overlay -->
+        <div id="camera-standby" class="camera-standby">
+          <div class="standby-card">
+            <div class="standby-lens" aria-hidden="true"></div>
+            <h2>Viewfinder Standby</h2>
+            <p id="standby-message">Allow camera access to shoot live retro film, or import a photo to develop with vintage filters.</p>
+            <div class="standby-actions">
+              <button id="btn-start-camera" class="btn-primary" type="button">Enable Camera</button>
+              <button id="btn-standby-import" class="btn-secondary" type="button">Import Photo</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Optical Telemetry Bar (Zoom + Exposure) -->
+      <div class="telemetry-bar">
+        <div class="telemetry-control">
+          <label for="zoom-slider">ZOOM</label>
+          <input id="zoom-slider" type="range" min="1" max="3" step="0.1" value="1">
+          <span id="zoom-value" class="telemetry-val">1.0×</span>
+        </div>
+        <div class="telemetry-control">
+          <label for="ev-slider">EV</label>
+          <input id="ev-slider" type="range" min="-1.5" max="1.5" step="0.1" value="0">
+          <span id="ev-value" class="telemetry-val">0.0</span>
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Film Deck & Shutter Controls -->
+    <footer class="bottom-deck">
+      <!-- Retro Film Stock Carousel -->
+      <div id="filter-carousel" class="filter-carousel" role="listbox" aria-label="Retro Camera Filters"></div>
+
+      <!-- Shutter & Auxiliary Controls -->
+      <div class="shutter-row">
+        <div class="deck-group left">
+          <button id="btn-gallery" class="gallery-thumb-btn" type="button" title="Open Film Roll Gallery">
+            <img id="gallery-thumb-img" alt="Latest shot" class="hidden">
+            <span id="gallery-empty-icon" class="thumb-placeholder">ROLL</span>
+            <span id="gallery-badge" class="gallery-badge">0</span>
+          </button>
+          <button id="btn-import" class="hw-btn" type="button" title="Import Photo to Filter">
+            <span class="hw-btn-icon">🖼</span>
+            <span class="hw-btn-label">IMPORT</span>
+          </button>
+        </div>
+
+        <button id="btn-shutter" class="shutter-button" type="button" aria-label="Take Photo">
+          <span class="shutter-ring">
+            <span class="shutter-core"></span>
+          </span>
+        </button>
+
+        <div class="deck-group right">
+          <button id="btn-leak-cycle" class="hw-btn" type="button" title="Cycle Light Leak">
+            <span class="hw-btn-icon">☀</span>
+            <span id="leak-btn-label" class="hw-btn-label">LEAK: OFF</span>
+          </button>
+          <button id="btn-flip" class="hw-btn" type="button" title="Switch Front/Rear Camera">
+            <span class="hw-btn-icon">⟲</span>
+            <span class="hw-btn-label">FLIP</span>
+          </button>
+        </div>
+      </div>
+    </footer>
+
+    <input id="file-input" type="file" accept="image/*" class="hidden">
+  </div>
+
+  <!-- Retro Lab Settings Drawer -->
+  <aside id="lab-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="lab-title">
+    <div class="modal-panel lab-panel">
+      <div class="modal-header">
+        <div>
+          <h2 id="lab-title">RETRO LAB</h2>
+          <p class="modal-subtitle">Settings saved automatically to Local Storage</p>
+        </div>
+        <button id="btn-close-lab" class="close-btn" type="button" aria-label="Close Retro Lab">✕</button>
+      </div>
+
+      <div class="lab-body">
+        <div class="lab-section">
+          <label class="lab-label">QUARTZ DATE STAMP</label>
+          <div class="segmented" id="seg-datestamp">
+            <button type="button" data-value="off">OFF</button>
+            <button type="button" data-value="modern">TODAY</button>
+            <button type="button" data-value="retro98">'98 RETRO</button>
+          </div>
+        </div>
+
+        <div class="lab-section">
+          <label class="lab-label">FILM FRAME</label>
+          <div class="segmented" id="seg-frame">
+            <button type="button" data-value="none">FULL BLEED</button>
+            <button type="button" data-value="polaroid">POLAROID</button>
+            <button type="button" data-value="35mm">35MM STRIP</button>
+          </div>
+        </div>
+
+        <div class="lab-section">
+          <label class="lab-label">LIGHT LEAK</label>
+          <div class="segmented" id="seg-leak">
+            <button type="button" data-value="0">OFF</button>
+            <button type="button" data-value="1">AMBER</button>
+            <button type="button" data-value="2">MAGENTA</button>
+            <button type="button" data-value="3">GOLD</button>
+            <button type="button" data-value="4">RANDOM</button>
+          </div>
+        </div>
+
+        <div class="lab-section slider-row">
+          <label for="grain-slider">FILM GRAIN <span id="grain-val">100%</span></label>
+          <input id="grain-slider" type="range" min="0" max="1.6" step="0.05" value="1">
+        </div>
+
+        <div class="lab-section slider-row">
+          <label for="vignette-slider">LENS VIGNETTE <span id="vignette-val">100%</span></label>
+          <input id="vignette-slider" type="range" min="0" max="1.6" step="0.05" value="1">
+        </div>
+
+        <div class="lab-section slider-row">
+          <label for="leak-slider">LEAK INTENSITY <span id="leak-val">65%</span></label>
+          <input id="leak-slider" type="range" min="0.1" max="1.0" step="0.05" value="0.65">
+        </div>
+
+        <div class="lab-section toggle-row">
+          <span>MECHANICAL SHUTTER SOUND</span>
+          <button id="btn-sound-toggle" class="hw-pill active" type="button">ON</button>
+        </div>
+
+        <div class="lab-section storage-card">
+          <div class="storage-info">
+            <span class="lab-label">LOCAL FILM ROLL STORAGE</span>
+            <p id="storage-summary">0 photos • 0.0 MB used</p>
+          </div>
+          <button id="btn-new-roll" class="btn-secondary small" type="button">New Film Roll</button>
+        </div>
+
+        <div id="ios-install-tip" class="ios-tip hidden">
+          <strong>Install as PWA:</strong> On iOS Safari, tap <em>Share → Add to Home Screen</em>. On desktop/Android, use the <strong>INSTALL</strong> button or browser menu.
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Film Roll Gallery Modal -->
+  <aside id="gallery-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="gallery-title">
+    <div class="modal-panel gallery-panel">
+      <div class="modal-header">
+        <div>
+          <h2 id="gallery-title">FILM ROLL</h2>
+          <p id="gallery-count-sub" class="modal-subtitle">0 developed shots</p>
+        </div>
+        <div class="gallery-header-actions">
+          <button id="btn-filter-fav" class="hw-pill" type="button">★ FAVS</button>
+          <button id="btn-clear-roll" class="hw-pill danger" type="button">CLEAR</button>
+          <button id="btn-close-gallery" class="close-btn" type="button" aria-label="Close Film Roll">✕</button>
+        </div>
+      </div>
+
+      <div id="gallery-grid" class="gallery-grid"></div>
+      <div id="gallery-empty" class="gallery-empty hidden">
+        <p>Your film roll is empty.</p>
+        <p class="muted">Snap a live photo or import an image to develop your first retro frame.</p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Photo Lightbox Modal -->
+  <aside id="lightbox-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="lightbox-meta">
+    <div class="modal-panel lightbox-panel">
+      <div class="modal-header">
+        <div>
+          <h2 id="lightbox-meta">GOLD 200 • EXP 001</h2>
+          <p id="lightbox-sub" class="modal-subtitle">1920 × 1440</p>
+        </div>
+        <button id="btn-close-lightbox" class="close-btn" type="button" aria-label="Close Photo Viewer">✕</button>
+      </div>
+
+      <div class="lightbox-stage">
+        <img id="lightbox-img" alt="Developed retro photograph">
+      </div>
+
+      <div class="lightbox-footer">
+        <input id="lightbox-caption" class="caption-input" type="text" maxlength="80" placeholder="Add a film note / caption...">
+        <div class="lightbox-actions">
+          <button id="btn-lb-fav" class="hw-pill" type="button">☆ FAVORITE</button>
+          <button id="btn-lb-share" class="hw-pill hidden" type="button">SHARE</button>
+          <button id="btn-lb-download" class="btn-primary" type="button">DOWNLOAD</button>
+          <button id="btn-lb-delete" class="hw-pill danger" type="button">DELETE</button>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
