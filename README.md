@@ -1,6 +1,6 @@
 # sCamera — Retro & Modern Film Camera PWA
 
-A tactile, offline-ready camera Progressive Web App with **534 retro and modern camera filters**, live 35mm film-roll preview thumbnails, real-time WebGL shaders, quartz date stamping, analog light leaks, film frames, and local persistence.
+A tactile, offline-ready camera Progressive Web App with **534 retro and modern camera filters** and **528 camera photo styles** (frames, mounts, HUDs, masks, and overlays), live 35mm film-roll preview thumbnails, real-time WebGL shaders, quartz date stamping, analog light leaks, and local persistence.
 
 ## Filter Collection (534 Presets)
 - **Retro Film (70+)**: Kodak Gold, Portra, Ektar, Ultramax, ColorPlus, Kodachrome, Ektachrome, Fuji Superia, Pro 400H, Velvia, Provia, Agfa Vista, Natura, Ferrania

@@ -14,6 +14,8 @@ export const DEFAULT_SETTINGS = {
   filterId: 'kodak-gold',
   filterCategory: 'all',
   favoriteFilterIds: ['kodak-gold', 'portra-400', 'cinestill-800t'],
+  styleCategory: 'all',
+  favoriteStyleIds: ['polaroid', '35mm', 'polaroid-cream-tape'],
   aspectRatio: '4:3',
   exposure: 0,
   grainIntensity: 1.0,

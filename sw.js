@@ -1,4 +1,4 @@
-const CACHE_NAME = 'scamera-cache-v5';
+const CACHE_NAME = 'scamera-cache-v6';
 
 const APP_SHELL = [
   './',
@@ -7,6 +7,7 @@ const APP_SHELL = [
   './styles/main.css',
   './js/app.js',
   './js/filters.js',
+  './js/styles.js',
   './js/gl-renderer.js',
   './js/compositor.js',
   './js/storage.js',

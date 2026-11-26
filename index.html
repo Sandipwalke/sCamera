@@ -44,6 +44,7 @@
       <div id="viewfinder-stage" class="viewfinder-stage ratio-4-3">
         <video id="camera-video" playsinline autoplay muted class="hidden-media"></video>
         <canvas id="viewfinder-canvas" class="viewfinder-canvas"></canvas>
+        <canvas id="style-overlay-canvas" class="style-overlay-canvas" aria-hidden="true"></canvas>
 
         <!-- Viewfinder Corner Brackets & Rule of Thirds Grid -->
         <div id="vf-grid" class="vf-grid">
@@ -109,10 +110,14 @@
 
     <!-- Bottom Film Deck & Shutter Controls -->
     <footer class="bottom-deck">
-      <!-- Category Tabs + Filter Search -->
+      <!-- Mode Switch + Category Tabs + Search -->
       <div class="filter-toolbar">
-        <div id="filter-categories" class="filter-categories" role="tablist" aria-label="Filter Categories"></div>
-        <button id="btn-browse-filters" class="hw-pill browse-pill" type="button" title="Search & Browse All Filters">
+        <div class="deck-mode-switch" role="tablist" aria-label="Filters or Styles">
+          <button id="btn-mode-filters" class="mode-btn active" type="button">FILTERS</button>
+          <button id="btn-mode-styles" class="mode-btn" type="button">STYLES</button>
+        </div>
+        <div id="filter-categories" class="filter-categories" role="tablist" aria-label="Categories"></div>
+        <button id="btn-browse-filters" class="hw-pill browse-pill" type="button" title="Search & Browse All Filters & Styles">
           <svg class="btn-svg" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
           <span id="filter-total-count">534</span>
         </button>
@@ -242,18 +247,24 @@
     </div>
   </aside>
 
-  <!-- Filter Catalog & Search Modal (500+ Filters) -->
+  <!-- Filter & Style Catalog Modal (500+ Filters & 500+ Styles) -->
   <aside id="filters-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="filters-modal-title">
     <div class="modal-panel gallery-panel">
       <div class="modal-header">
         <div>
-          <h2 id="filters-modal-title">FILM & FILTER CATALOG</h2>
-          <p id="filters-modal-sub" class="modal-subtitle">534 retro & modern presets with live preview</p>
+          <h2 id="filters-modal-title">FILM &amp; STYLE CATALOG</h2>
+          <p id="filters-modal-sub" class="modal-subtitle">534 filters &amp; 528 camera styles with live preview</p>
         </div>
-        <button id="btn-close-filters" class="close-btn" type="button" aria-label="Close Filter Catalog">✕</button>
+        <div class="gallery-header-actions">
+          <div class="deck-mode-switch" role="tablist" aria-label="Catalog Mode">
+            <button id="btn-cat-mode-filters" class="mode-btn active" type="button">FILTERS</button>
+            <button id="btn-cat-mode-styles" class="mode-btn" type="button">STYLES</button>
+          </div>
+          <button id="btn-close-filters" class="close-btn" type="button" aria-label="Close Catalog">✕</button>
+        </div>
       </div>
       <div class="catalog-search-bar">
-        <input id="filter-search-input" class="caption-input" type="search" placeholder="Search 534 filters (e.g. Kodak, Modern, Neon, B&W, Polaroid, CCD)...">
+        <input id="filter-search-input" class="caption-input" type="search" placeholder="Search 534 filters & 528 styles (e.g. Kodak, Polaroid, Neon, Arch, VHS)...">
       </div>
       <div id="catalog-categories" class="filter-categories catalog-cats"></div>
       <div id="catalog-grid" class="catalog-grid"></div>

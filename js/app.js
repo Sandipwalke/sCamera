@@ -1,6 +1,7 @@
 import { RETRO_FILTERS, FILTER_CATEGORIES, ASPECT_RATIOS, getFilterById } from './filters.js';
+import { PHOTO_STYLES, STYLE_CATEGORIES, getStyleById } from './styles.js';
 import { RetroRenderer } from './gl-renderer.js';
-import { composeShot, formatDateStamp } from './compositor.js';
+import { composeShot, formatDateStamp, renderStyleLayer } from './compositor.js';
 import { shutterAudio } from './audio.js';
 import { loadSettings, saveSettings, photoStore } from './storage.js';
 
@@ -31,6 +32,8 @@ class RetroCameraApp {
     this.activePhotoId = null;
     this.galleryFavOnly = false;
     this.objectUrls = [];
+    this.deckMode = 'filters'; // 'filters' | 'styles'
+    this.catalogMode = 'filters'; // 'filters' | 'styles'
     this.catalogCategory = this.settings.filterCategory || 'all';
     this.catalogQuery = '';
     this.visibleCarouselChips = new Set();
@@ -69,6 +72,7 @@ class RetroCameraApp {
       stage: $('viewfinder-stage'),
       video: $('camera-video'),
       canvas: $('viewfinder-canvas'),
+      styleOverlayCanvas: $('style-overlay-canvas'),
       vfGrid: $('vf-grid'),
       vfDateStamp: $('vf-datestamp'),
       hudFilter: $('hud-filter'),
@@ -87,6 +91,8 @@ class RetroCameraApp {
       zoomVal: $('zoom-value'),
       evSlider: $('ev-slider'),
       evVal: $('ev-value'),
+      btnModeFilters: $('btn-mode-filters'),
+      btnModeStyles: $('btn-mode-styles'),
       filterCategories: $('filter-categories'),
       btnBrowseFilters: $('btn-browse-filters'),
       filterTotalCount: $('filter-total-count'),
@@ -95,6 +101,8 @@ class RetroCameraApp {
       carousel: $('filter-carousel'),
       filtersModal: $('filters-modal'),
       filtersModalSub: $('filters-modal-sub'),
+      btnCatModeFilters: $('btn-cat-mode-filters'),
+      btnCatModeStyles: $('btn-cat-mode-styles'),
       btnCloseFilters: $('btn-close-filters'),
       filterSearchInput: $('filter-search-input'),
       catalogCategories: $('catalog-categories'),
@@ -231,12 +239,15 @@ class RetroCameraApp {
   }
 
   _renderThumbForElement(el) {
-    const filterId = el.dataset.filterId;
+    const kind = el.dataset.itemKind || 'filter';
+    const itemId = el.dataset.itemId || el.dataset.filterId;
     const canvas = el.querySelector('canvas.filter-thumb-canvas');
-    if (!filterId || !canvas) return;
+    if (!itemId || !canvas) return;
 
     const src = this._getPreviewSource();
-    const filter = getFilterById(filterId);
+    const activeFilter = getFilterById(this.settings.filterId);
+    const filter = kind === 'filter' ? getFilterById(itemId) : activeFilter;
+
     this.thumbRenderer.render(src.source, src.width, src.height, {
       filter,
       exposure: this.settings.exposure,
@@ -249,8 +260,18 @@ class RetroCameraApp {
       lightLeakSeed: 1.2,
       time: 1.0,
     });
+
     const ctx = canvas.getContext('2d');
-    if (ctx) {
+    if (!ctx) return;
+    if (kind === 'style') {
+      const style = getStyleById(itemId);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      renderStyleLayer(ctx, canvas.width, canvas.height, this.thumbCanvas, style, {
+        filterName: activeFilter.name,
+        frameNumber: this.settings.rollCounter,
+        compact: true,
+      });
+    } else {
       ctx.drawImage(this.thumbCanvas, 0, 0, canvas.width, canvas.height);
     }
   }
@@ -266,54 +287,87 @@ class RetroCameraApp {
     }
   }
 
-  _getFiltersFor(categoryId, query = '') {
-    const favSet = new Set(this.settings.favoriteFilterIds || []);
-    let list = RETRO_FILTERS;
+  _getItemsFor(mode, categoryId, query = '') {
+    const isStyles = mode === 'styles';
+    const allItems = isStyles ? PHOTO_STYLES : RETRO_FILTERS;
+    const favSet = new Set(
+      isStyles ? (this.settings.favoriteStyleIds || []) : (this.settings.favoriteFilterIds || [])
+    );
+
+    let list = allItems;
     if (categoryId === 'favorites') {
-      list = RETRO_FILTERS.filter((f) => favSet.has(f.id));
+      list = allItems.filter((item) => favSet.has(item.id));
     } else if (categoryId && categoryId !== 'all') {
-      list = RETRO_FILTERS.filter((f) => f.category === categoryId);
+      list = allItems.filter((item) => item.category === categoryId);
     }
 
     const q = query.trim().toLowerCase();
     if (q) {
       list = list.filter(
-        (f) =>
-          f.name.toLowerCase().includes(q) ||
-          f.subtitle.toLowerCase().includes(q) ||
-          f.badge.toLowerCase().includes(q) ||
-          f.category.toLowerCase().includes(q)
+        (item) =>
+          item.name.toLowerCase().includes(q) ||
+          item.subtitle.toLowerCase().includes(q) ||
+          item.badge.toLowerCase().includes(q) ||
+          item.category.toLowerCase().includes(q)
       );
     }
     return list;
   }
 
-  _isFilterFavorite(id) {
-    return (this.settings.favoriteFilterIds || []).includes(id);
+  _isItemFavorite(mode, id) {
+    const arr = mode === 'styles' ? this.settings.favoriteStyleIds : this.settings.favoriteFilterIds;
+    return (arr || []).includes(id);
   }
 
-  _toggleFilterFavorite(id) {
-    const set = new Set(this.settings.favoriteFilterIds || []);
+  _toggleItemFavorite(mode, id) {
+    const key = mode === 'styles' ? 'favoriteStyleIds' : 'favoriteFilterIds';
+    const set = new Set(this.settings[key] || []);
     if (set.has(id)) set.delete(id);
     else set.add(id);
-    this.settings.favoriteFilterIds = [...set];
+    this.settings[key] = [...set];
     this._persistSettings();
     this._buildCategoryBars();
-    if (this.settings.filterCategory === 'favorites') {
-      this._buildFilterCarousel();
-    } else {
-      const chip = this.el.carousel.querySelector(`[data-filter-id="${id}"] .filter-thumb-fav`);
-      if (chip) chip.classList.toggle('hidden', !set.has(id));
+
+    const activeCat = mode === 'styles' ? this.settings.styleCategory : this.settings.filterCategory;
+    if (this.deckMode === mode) {
+      if (activeCat === 'favorites') {
+        this._buildFilterCarousel();
+      } else {
+        const star = this.el.carousel.querySelector(`[data-item-id="${id}"] .filter-thumb-fav`);
+        if (star) star.classList.toggle('hidden', !set.has(id));
+      }
     }
   }
 
-  _buildCategoryBars() {
-    this.el.filterTotalCount.textContent = String(RETRO_FILTERS.length);
+  _setDeckMode(mode) {
+    this.deckMode = mode;
+    this.el.btnModeFilters.classList.toggle('active', mode === 'filters');
+    this.el.btnModeStyles.classList.toggle('active', mode === 'styles');
+    this._buildCategoryBars();
+    this._buildFilterCarousel();
+    this._syncUI();
+  }
 
-    const renderBar = (container, activeId, onPick) => {
+  _setCatalogMode(mode) {
+    this.catalogMode = mode;
+    this.catalogCategory = mode === 'styles'
+      ? (this.settings.styleCategory || 'all')
+      : (this.settings.filterCategory || 'all');
+    this.el.btnCatModeFilters.classList.toggle('active', mode === 'filters');
+    this.el.btnCatModeStyles.classList.toggle('active', mode === 'styles');
+    this._buildCategoryBars();
+    this._renderCatalogGrid();
+  }
+
+  _buildCategoryBars() {
+    const deckAll = this.deckMode === 'styles' ? PHOTO_STYLES.length : RETRO_FILTERS.length;
+    this.el.filterTotalCount.textContent = String(deckAll);
+
+    const renderBar = (container, mode, activeId, onPick) => {
+      const cats = mode === 'styles' ? STYLE_CATEGORIES : FILTER_CATEGORIES;
       container.innerHTML = '';
-      for (const cat of FILTER_CATEGORIES) {
-        const count = this._getFiltersFor(cat.id).length;
+      for (const cat of cats) {
+        const count = this._getItemsFor(mode, cat.id).length;
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = `cat-pill${cat.id === activeId ? ' active' : ''}`;
@@ -324,15 +378,23 @@ class RetroCameraApp {
       }
     };
 
-    renderBar(this.el.filterCategories, this.settings.filterCategory || 'all', (catId) => {
-      this.settings.filterCategory = catId;
+    const activeDeckCat = this.deckMode === 'styles'
+      ? (this.settings.styleCategory || 'all')
+      : (this.settings.filterCategory || 'all');
+
+    renderBar(this.el.filterCategories, this.deckMode, activeDeckCat, (catId) => {
+      if (this.deckMode === 'styles') {
+        this.settings.styleCategory = catId;
+      } else {
+        this.settings.filterCategory = catId;
+      }
       this._persistSettings();
       this._buildCategoryBars();
       this._buildFilterCarousel();
       this._syncUI();
     });
 
-    renderBar(this.el.catalogCategories, this.catalogCategory, (catId) => {
+    renderBar(this.el.catalogCategories, this.catalogMode, this.catalogCategory, (catId) => {
       this.catalogCategory = catId;
       this._buildCategoryBars();
       this._renderCatalogGrid();
@@ -344,25 +406,38 @@ class RetroCameraApp {
     this.visibleCarouselChips.clear();
     this.el.carousel.innerHTML = '';
 
-    const list = this._getFiltersFor(this.settings.filterCategory || 'all');
+    const mode = this.deckMode;
+    const cat = mode === 'styles'
+      ? (this.settings.styleCategory || 'all')
+      : (this.settings.filterCategory || 'all');
+    const list = this._getItemsFor(mode, cat);
     const frag = document.createDocumentFragment();
 
-    for (const filter of list) {
+    for (const item of list) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'filter-chip';
-      btn.dataset.filterId = filter.id;
+      btn.dataset.itemKind = mode === 'styles' ? 'style' : 'filter';
+      btn.dataset.itemId = item.id;
+      if (mode === 'filters') {
+        btn.dataset.filterId = item.id;
+      } else {
+        btn.dataset.styleId = item.id;
+      }
       btn.setAttribute('role', 'option');
-      const isFav = this._isFilterFavorite(filter.id);
+      const isFav = this._isItemFavorite(mode, item.id);
       btn.innerHTML = `
         <div class="filter-thumb-wrap">
           <canvas class="filter-thumb-canvas" width="96" height="64"></canvas>
           <span class="filter-thumb-fav${isFav ? '' : ' hidden'}">★</span>
-          <span class="filter-thumb-badge">${filter.badge}</span>
+          <span class="filter-thumb-badge">${item.badge}</span>
         </div>
-        <span class="filter-name">${filter.name}</span>
+        <span class="filter-name">${item.name}</span>
       `;
-      btn.addEventListener('click', () => this.selectFilter(filter.id));
+      btn.addEventListener('click', () => {
+        if (mode === 'styles') this.selectStyle(item.id);
+        else this.selectFilter(item.id);
+      });
       frag.appendChild(btn);
     }
 
@@ -380,7 +455,12 @@ class RetroCameraApp {
   }
 
   _openFilterCatalog() {
-    this.catalogCategory = this.settings.filterCategory || 'all';
+    this.catalogMode = this.deckMode;
+    this.catalogCategory = this.catalogMode === 'styles'
+      ? (this.settings.styleCategory || 'all')
+      : (this.settings.filterCategory || 'all');
+    this.el.btnCatModeFilters.classList.toggle('active', this.catalogMode === 'filters');
+    this.el.btnCatModeStyles.classList.toggle('active', this.catalogMode === 'styles');
     this.el.filterSearchInput.value = this.catalogQuery;
     this._buildCategoryBars();
     this._renderCatalogGrid();
@@ -392,46 +472,55 @@ class RetroCameraApp {
     this.visibleCatalogCards.clear();
     this.el.catalogGrid.innerHTML = '';
 
-    const list = this._getFiltersFor(this.catalogCategory, this.catalogQuery);
-    this.el.filtersModalSub.textContent = `${list.length} of ${RETRO_FILTERS.length} retro & modern filters`;
+    const mode = this.catalogMode;
+    const totalCount = mode === 'styles' ? PHOTO_STYLES.length : RETRO_FILTERS.length;
+    const activeId = mode === 'styles' ? this.settings.frameStyle : this.settings.filterId;
+    const list = this._getItemsFor(mode, this.catalogCategory, this.catalogQuery);
+
+    this.el.filtersModalSub.textContent = `${list.length} of ${totalCount} ${mode === 'styles' ? 'camera styles' : 'retro & modern filters'}`;
 
     const frag = document.createDocumentFragment();
-    for (const filter of list) {
+    for (const item of list) {
       const card = document.createElement('div');
-      card.className = `catalog-card${filter.id === this.settings.filterId ? ' active' : ''}`;
-      card.dataset.filterId = filter.id;
+      card.className = `catalog-card${item.id === activeId ? ' active' : ''}`;
+      card.dataset.itemKind = mode === 'styles' ? 'style' : 'filter';
+      card.dataset.itemId = item.id;
+      if (mode === 'filters') card.dataset.filterId = item.id;
+      else card.dataset.styleId = item.id;
       card.setAttribute('role', 'button');
       card.tabIndex = 0;
 
-      const isFav = this._isFilterFavorite(filter.id);
+      const isFav = this._isItemFavorite(mode, item.id);
       card.innerHTML = `
         <div class="filter-thumb-wrap">
           <canvas class="filter-thumb-canvas" width="96" height="64"></canvas>
-          <span class="filter-thumb-badge">${filter.badge}</span>
+          <span class="filter-thumb-badge">${item.badge}</span>
         </div>
         <div class="catalog-card-foot">
           <div class="catalog-card-title">
-            <span class="filter-name">${filter.name}</span>
-            <span class="catalog-card-sub">${filter.subtitle}</span>
+            <span class="filter-name">${item.name}</span>
+            <span class="catalog-card-sub">${item.subtitle}</span>
           </div>
-          <button type="button" class="fav-star-btn${isFav ? ' active' : ''}" aria-label="Favorite ${filter.name}">${isFav ? '★' : '☆'}</button>
+          <button type="button" class="fav-star-btn${isFav ? ' active' : ''}" aria-label="Favorite ${item.name}">${isFav ? '★' : '☆'}</button>
         </div>
       `;
 
       card.addEventListener('click', (e) => {
         if (e.target.closest('.fav-star-btn')) {
           e.stopPropagation();
-          this._toggleFilterFavorite(filter.id);
+          this._toggleItemFavorite(mode, item.id);
           const starBtn = card.querySelector('.fav-star-btn');
-          const nowFav = this._isFilterFavorite(filter.id);
+          const nowFav = this._isItemFavorite(mode, item.id);
           starBtn.textContent = nowFav ? '★' : '☆';
           starBtn.classList.toggle('active', nowFav);
           return;
         }
-        this.selectFilter(filter.id);
+        if (this.deckMode !== mode) {
+          this._setDeckMode(mode);
+        }
+        if (mode === 'styles') this.selectStyle(item.id);
+        else this.selectFilter(item.id);
         this.el.filtersModal.classList.add('hidden');
-        const activeChip = this.el.carousel.querySelector(`[data-filter-id="${filter.id}"]`);
-        activeChip?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
       });
 
       frag.appendChild(card);
@@ -487,6 +576,10 @@ class RetroCameraApp {
     this.el.btnFlip.addEventListener('click', () => this._flipCamera());
     this.el.btnLeakCycle.addEventListener('click', () => this._cycleLightLeak());
 
+    this.el.btnModeFilters.addEventListener('click', () => this._setDeckMode('filters'));
+    this.el.btnModeStyles.addEventListener('click', () => this._setDeckMode('styles'));
+    this.el.btnCatModeFilters.addEventListener('click', () => this._setCatalogMode('filters'));
+    this.el.btnCatModeStyles.addEventListener('click', () => this._setCatalogMode('styles'));
     this.el.btnBrowseFilters.addEventListener('click', () => this._openFilterCatalog());
     this.el.btnFilmPrev.addEventListener('click', () => {
       this.el.carousel.scrollBy({ left: -280, behavior: 'smooth' });
@@ -727,7 +820,20 @@ class RetroCameraApp {
     if (this.settings.soundEnabled) shutterAudio.playDialClick();
     this._persistSettings();
     this._syncUI();
-    const chip = this.el.carousel.querySelector(`[data-filter-id="${id}"]`);
+    if (this.deckMode === 'styles') {
+      this._refreshVisiblePreviews();
+    } else {
+      const chip = this.el.carousel.querySelector(`[data-item-id="${id}"]`);
+      chip?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }
+
+  selectStyle(id) {
+    this.settings.frameStyle = id;
+    if (this.settings.soundEnabled) shutterAudio.playDialClick();
+    this._persistSettings();
+    this._syncUI();
+    const chip = this.el.carousel.querySelector(`[data-item-id="${id}"]`);
     chip?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
   }
 
@@ -765,6 +871,7 @@ class RetroCameraApp {
 
   _syncUI() {
     const filter = getFilterById(this.settings.filterId);
+    const style = getStyleById(this.settings.frameStyle);
 
     // Top plate
     this.el.rollCounter.textContent =
@@ -783,8 +890,8 @@ class RetroCameraApp {
 
     // HUD chips
     this.el.hudFilter.textContent = filter.name;
-    this.el.hudFrame.textContent = this.settings.frameStyle.toUpperCase();
-    this.el.hudFrame.classList.toggle('hidden', this.settings.frameStyle === 'none');
+    this.el.hudFrame.textContent = style.name;
+    this.el.hudFrame.classList.toggle('hidden', style.id === 'none');
     const leakMeta = LEAK_MODES.find((m) => m.value === this.settings.lightLeakMode) || LEAK_MODES[0];
     this.el.hudLeak.textContent = `LEAK: ${leakMeta.label}`;
     this.el.hudLeak.classList.toggle('hidden', this.settings.lightLeakMode === 0);
@@ -816,11 +923,33 @@ class RetroCameraApp {
     this._markSegmented(this.el.segFrame, this.settings.frameStyle);
     this._markSegmented(this.el.segLeak, String(this.settings.lightLeakMode));
 
-    // Carousel active chip
+    // Carousel active chip (Filters or Styles)
+    const activeItemId = this.deckMode === 'styles' ? style.id : filter.id;
     this.el.carousel.querySelectorAll('.filter-chip').forEach((chip) => {
-      const active = chip.dataset.filterId === filter.id;
+      const active = chip.dataset.itemId === activeItemId;
       chip.classList.toggle('active', active);
       chip.setAttribute('aria-selected', String(active));
+    });
+
+    this._renderStyleOverlay();
+  }
+
+  _renderStyleOverlay() {
+    const ov = this.el.styleOverlayCanvas;
+    if (!ov || !ov.width || !ov.height) return;
+    const ctx = ov.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, ov.width, ov.height);
+
+    const style = getStyleById(this.settings.frameStyle);
+    if (style.id === 'none') return;
+
+    const filter = getFilterById(this.settings.filterId);
+    renderStyleLayer(ctx, ov.width, ov.height, null, style, {
+      filterName: filter.name,
+      frameNumber: this.settings.rollCounter,
+      dateStampText: '',
+      compact: false,
     });
   }
 
@@ -839,6 +968,11 @@ class RetroCameraApp {
     if (this.el.canvas.width !== w || this.el.canvas.height !== h) {
       this.el.canvas.width = w;
       this.el.canvas.height = h;
+    }
+    if (this.el.styleOverlayCanvas.width !== w || this.el.styleOverlayCanvas.height !== h) {
+      this.el.styleOverlayCanvas.width = w;
+      this.el.styleOverlayCanvas.height = h;
+      this._renderStyleOverlay();
     }
   }
 
@@ -1078,6 +1212,7 @@ class RetroCameraApp {
         lightLeakSeed: leakSeed,
         dateStampMode: this.settings.dateStampMode,
         frameStyle: this.settings.frameStyle,
+        styleObj: getStyleById(this.settings.frameStyle),
         frameNumber,
       });
 
