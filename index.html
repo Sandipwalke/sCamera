@@ -109,8 +109,14 @@
 
     <!-- Bottom Film Deck & Shutter Controls -->
     <footer class="bottom-deck">
-      <!-- Retro Film Stock Carousel -->
-      <div id="filter-carousel" class="filter-carousel" role="listbox" aria-label="Retro Camera Filters"></div>
+      <!-- Category Tabs + Filter Search -->
+      <div class="filter-toolbar">
+        <div id="filter-categories" class="filter-categories" role="tablist" aria-label="Filter Categories"></div>
+        <button id="btn-browse-filters" class="hw-pill browse-pill" type="button" title="Search & Browse All Filters">🔍 <span id="filter-total-count">534</span></button>
+      </div>
+
+      <!-- Retro & Modern Film Stock Carousel with Live Previews -->
+      <div id="filter-carousel" class="filter-carousel" role="listbox" aria-label="Camera Filters"></div>
 
       <!-- Shutter & Auxiliary Controls -->
       <div class="shutter-row">
@@ -226,6 +232,24 @@
           <strong>Install as PWA:</strong> On iOS Safari, tap <em>Share → Add to Home Screen</em>. On desktop/Android, use the <strong>INSTALL</strong> button or browser menu.
         </div>
       </div>
+    </div>
+  </aside>
+
+  <!-- Filter Catalog & Search Modal (500+ Filters) -->
+  <aside id="filters-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="filters-modal-title">
+    <div class="modal-panel gallery-panel">
+      <div class="modal-header">
+        <div>
+          <h2 id="filters-modal-title">FILM & FILTER CATALOG</h2>
+          <p id="filters-modal-sub" class="modal-subtitle">534 retro & modern presets with live preview</p>
+        </div>
+        <button id="btn-close-filters" class="close-btn" type="button" aria-label="Close Filter Catalog">✕</button>
+      </div>
+      <div class="catalog-search-bar">
+        <input id="filter-search-input" class="caption-input" type="search" placeholder="Search 534 filters (e.g. Kodak, Modern, Neon, B&W, Polaroid, CCD)...">
+      </div>
+      <div id="catalog-categories" class="filter-categories catalog-cats"></div>
+      <div id="catalog-grid" class="catalog-grid"></div>
     </div>
   </aside>
 

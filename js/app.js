@@ -1,4 +1,4 @@
-import { RETRO_FILTERS, ASPECT_RATIOS, getFilterById } from './filters.js';
+import { RETRO_FILTERS, FILTER_CATEGORIES, ASPECT_RATIOS, getFilterById } from './filters.js';
 import { RetroRenderer } from './gl-renderer.js';
 import { composeShot, formatDateStamp } from './compositor.js';
 import { shutterAudio } from './audio.js';
@@ -31,9 +31,21 @@ class RetroCameraApp {
     this.activePhotoId = null;
     this.galleryFavOnly = false;
     this.objectUrls = [];
+    this.catalogCategory = this.settings.filterCategory || 'all';
+    this.catalogQuery = '';
+    this.visibleCarouselChips = new Set();
+    this.visibleCatalogCards = new Set();
 
     this._cacheElements();
     this.renderer = new RetroRenderer(this.el.canvas);
+    this.thumbCanvas = document.createElement('canvas');
+    this.thumbCanvas.width = 96;
+    this.thumbCanvas.height = 64;
+    this.thumbRenderer = new RetroRenderer(this.thumbCanvas);
+    this.fallbackPreviewCanvas = this._createFallbackPreviewCanvas();
+
+    this._initPreviewObservers();
+    this._buildCategoryBars();
     this._buildFilterCarousel();
     this._bindEvents();
     this._syncUI();
@@ -75,7 +87,16 @@ class RetroCameraApp {
       zoomVal: $('zoom-value'),
       evSlider: $('ev-slider'),
       evVal: $('ev-value'),
+      filterCategories: $('filter-categories'),
+      btnBrowseFilters: $('btn-browse-filters'),
+      filterTotalCount: $('filter-total-count'),
       carousel: $('filter-carousel'),
+      filtersModal: $('filters-modal'),
+      filtersModalSub: $('filters-modal-sub'),
+      btnCloseFilters: $('btn-close-filters'),
+      filterSearchInput: $('filter-search-input'),
+      catalogCategories: $('catalog-categories'),
+      catalogGrid: $('catalog-grid'),
       btnGallery: $('btn-gallery'),
       galleryThumbImg: $('gallery-thumb-img'),
       galleryEmptyIcon: $('gallery-empty-icon'),
@@ -123,28 +144,289 @@ class RetroCameraApp {
     };
   }
 
+  _createFallbackPreviewCanvas() {
+    const c = document.createElement('canvas');
+    c.width = 96;
+    c.height = 64;
+    const ctx = c.getContext('2d');
+    const sky = ctx.createLinearGradient(0, 0, 0, 40);
+    sky.addColorStop(0, '#3a6ea5');
+    sky.addColorStop(0.55, '#f29e4c');
+    sky.addColorStop(1, '#f7d08a');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, 96, 40);
+
+    // Sun disc
+    ctx.fillStyle = '#fff3b0';
+    ctx.beginPath();
+    ctx.arc(68, 22, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Sea / horizon
+    const sea = ctx.createLinearGradient(0, 38, 0, 64);
+    sea.addColorStop(0, '#2a6f97');
+    sea.addColorStop(1, '#183a4a');
+    ctx.fillStyle = sea;
+    ctx.fillRect(0, 38, 96, 26);
+
+    // Foreground warm hills
+    ctx.fillStyle = '#582f0e';
+    ctx.beginPath();
+    ctx.moveTo(0, 64);
+    ctx.lineTo(0, 44);
+    ctx.quadraticCurveTo(28, 36, 54, 52);
+    ctx.lineTo(96, 46);
+    ctx.lineTo(96, 64);
+    ctx.closePath();
+    ctx.fill();
+    return c;
+  }
+
+  _initPreviewObservers() {
+    this.carouselObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            this.visibleCarouselChips.add(entry.target);
+            this._renderThumbForElement(entry.target);
+          } else {
+            this.visibleCarouselChips.delete(entry.target);
+          }
+        }
+      },
+      { root: this.el.carousel, rootMargin: '120px' }
+    );
+
+    this.catalogObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            this.visibleCatalogCards.add(entry.target);
+            this._renderThumbForElement(entry.target);
+          } else {
+            this.visibleCatalogCards.delete(entry.target);
+          }
+        }
+      },
+      { root: this.el.catalogGrid, rootMargin: '160px' }
+    );
+  }
+
+  _getPreviewSource() {
+    return (
+      this._getCurrentSource() || {
+        source: this.fallbackPreviewCanvas,
+        width: this.fallbackPreviewCanvas.width,
+        height: this.fallbackPreviewCanvas.height,
+        mirror: false,
+      }
+    );
+  }
+
+  _renderThumbForElement(el) {
+    const filterId = el.dataset.filterId;
+    const canvas = el.querySelector('canvas.filter-thumb-canvas');
+    if (!filterId || !canvas) return;
+
+    const src = this._getPreviewSource();
+    const filter = getFilterById(filterId);
+    this.thumbRenderer.render(src.source, src.width, src.height, {
+      filter,
+      exposure: this.settings.exposure,
+      zoom: 1.0,
+      mirror: src.mirror,
+      grainIntensity: this.settings.grainIntensity * 0.7,
+      vignetteIntensity: this.settings.vignetteIntensity,
+      lightLeakMode: 0,
+      lightLeakIntensity: 0,
+      lightLeakSeed: 1.2,
+      time: 1.0,
+    });
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(this.thumbCanvas, 0, 0, canvas.width, canvas.height);
+    }
+  }
+
+  _refreshVisiblePreviews() {
+    for (const chip of this.visibleCarouselChips) {
+      this._renderThumbForElement(chip);
+    }
+    if (!this.el.filtersModal.classList.contains('hidden')) {
+      for (const card of this.visibleCatalogCards) {
+        this._renderThumbForElement(card);
+      }
+    }
+  }
+
+  _getFiltersFor(categoryId, query = '') {
+    const favSet = new Set(this.settings.favoriteFilterIds || []);
+    let list = RETRO_FILTERS;
+    if (categoryId === 'favorites') {
+      list = RETRO_FILTERS.filter((f) => favSet.has(f.id));
+    } else if (categoryId && categoryId !== 'all') {
+      list = RETRO_FILTERS.filter((f) => f.category === categoryId);
+    }
+
+    const q = query.trim().toLowerCase();
+    if (q) {
+      list = list.filter(
+        (f) =>
+          f.name.toLowerCase().includes(q) ||
+          f.subtitle.toLowerCase().includes(q) ||
+          f.badge.toLowerCase().includes(q) ||
+          f.category.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }
+
+  _isFilterFavorite(id) {
+    return (this.settings.favoriteFilterIds || []).includes(id);
+  }
+
+  _toggleFilterFavorite(id) {
+    const set = new Set(this.settings.favoriteFilterIds || []);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    this.settings.favoriteFilterIds = [...set];
+    this._persistSettings();
+    this._buildCategoryBars();
+    if (this.settings.filterCategory === 'favorites') {
+      this._buildFilterCarousel();
+    } else {
+      const chip = this.el.carousel.querySelector(`[data-filter-id="${id}"] .filter-thumb-fav`);
+      if (chip) chip.classList.toggle('hidden', !set.has(id));
+    }
+  }
+
+  _buildCategoryBars() {
+    this.el.filterTotalCount.textContent = String(RETRO_FILTERS.length);
+
+    const renderBar = (container, activeId, onPick) => {
+      container.innerHTML = '';
+      for (const cat of FILTER_CATEGORIES) {
+        const count = this._getFiltersFor(cat.id).length;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `cat-pill${cat.id === activeId ? ' active' : ''}`;
+        btn.dataset.category = cat.id;
+        btn.textContent = `${cat.label} (${count})`;
+        btn.addEventListener('click', () => onPick(cat.id));
+        container.appendChild(btn);
+      }
+    };
+
+    renderBar(this.el.filterCategories, this.settings.filterCategory || 'all', (catId) => {
+      this.settings.filterCategory = catId;
+      this._persistSettings();
+      this._buildCategoryBars();
+      this._buildFilterCarousel();
+      this._syncUI();
+    });
+
+    renderBar(this.el.catalogCategories, this.catalogCategory, (catId) => {
+      this.catalogCategory = catId;
+      this._buildCategoryBars();
+      this._renderCatalogGrid();
+    });
+  }
+
   _buildFilterCarousel() {
+    this.carouselObserver.disconnect();
+    this.visibleCarouselChips.clear();
     this.el.carousel.innerHTML = '';
-    for (const filter of RETRO_FILTERS) {
+
+    const list = this._getFiltersFor(this.settings.filterCategory || 'all');
+    const frag = document.createDocumentFragment();
+
+    for (const filter of list) {
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'filter-chip';
       btn.dataset.filterId = filter.id;
       btn.setAttribute('role', 'option');
+      const isFav = this._isFilterFavorite(filter.id);
       btn.innerHTML = `
-        <div class="filter-chip-top">
-          <div class="swatch-dots">
-            <span style="background:${filter.swatch[0]}"></span>
-            <span style="background:${filter.swatch[1]}"></span>
-            <span style="background:${filter.swatch[2]}"></span>
-          </div>
-          <span class="filter-badge">${filter.badge}</span>
+        <div class="filter-thumb-wrap">
+          <canvas class="filter-thumb-canvas" width="96" height="64"></canvas>
+          <span class="filter-thumb-fav${isFav ? '' : ' hidden'}">★</span>
+          <span class="filter-thumb-badge">${filter.badge}</span>
         </div>
         <span class="filter-name">${filter.name}</span>
       `;
       btn.addEventListener('click', () => this.selectFilter(filter.id));
-      this.el.carousel.appendChild(btn);
+      frag.appendChild(btn);
     }
+
+    this.el.carousel.appendChild(frag);
+    this.el.carousel.querySelectorAll('.filter-chip').forEach((chip) => {
+      this.carouselObserver.observe(chip);
+    });
+  }
+
+  _openFilterCatalog() {
+    this.catalogCategory = this.settings.filterCategory || 'all';
+    this.el.filterSearchInput.value = this.catalogQuery;
+    this._buildCategoryBars();
+    this._renderCatalogGrid();
+    this.el.filtersModal.classList.remove('hidden');
+  }
+
+  _renderCatalogGrid() {
+    this.catalogObserver.disconnect();
+    this.visibleCatalogCards.clear();
+    this.el.catalogGrid.innerHTML = '';
+
+    const list = this._getFiltersFor(this.catalogCategory, this.catalogQuery);
+    this.el.filtersModalSub.textContent = `${list.length} of ${RETRO_FILTERS.length} retro & modern filters`;
+
+    const frag = document.createDocumentFragment();
+    for (const filter of list) {
+      const card = document.createElement('div');
+      card.className = `catalog-card${filter.id === this.settings.filterId ? ' active' : ''}`;
+      card.dataset.filterId = filter.id;
+      card.setAttribute('role', 'button');
+      card.tabIndex = 0;
+
+      const isFav = this._isFilterFavorite(filter.id);
+      card.innerHTML = `
+        <div class="filter-thumb-wrap">
+          <canvas class="filter-thumb-canvas" width="96" height="64"></canvas>
+          <span class="filter-thumb-badge">${filter.badge}</span>
+        </div>
+        <div class="catalog-card-foot">
+          <div class="catalog-card-title">
+            <span class="filter-name">${filter.name}</span>
+            <span class="catalog-card-sub">${filter.subtitle}</span>
+          </div>
+          <button type="button" class="fav-star-btn${isFav ? ' active' : ''}" aria-label="Favorite ${filter.name}">${isFav ? '★' : '☆'}</button>
+        </div>
+      `;
+
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('.fav-star-btn')) {
+          e.stopPropagation();
+          this._toggleFilterFavorite(filter.id);
+          const starBtn = card.querySelector('.fav-star-btn');
+          const nowFav = this._isFilterFavorite(filter.id);
+          starBtn.textContent = nowFav ? '★' : '☆';
+          starBtn.classList.toggle('active', nowFav);
+          return;
+        }
+        this.selectFilter(filter.id);
+        this.el.filtersModal.classList.add('hidden');
+        const activeChip = this.el.carousel.querySelector(`[data-filter-id="${filter.id}"]`);
+        activeChip?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      });
+
+      frag.appendChild(card);
+    }
+
+    this.el.catalogGrid.appendChild(frag);
+    this.el.catalogGrid.querySelectorAll('.catalog-card').forEach((card) => {
+      this.catalogObserver.observe(card);
+    });
   }
 
   _bindEvents() {
@@ -191,12 +473,23 @@ class RetroCameraApp {
     this.el.btnFlip.addEventListener('click', () => this._flipCamera());
     this.el.btnLeakCycle.addEventListener('click', () => this._cycleLightLeak());
 
+    this.el.btnBrowseFilters.addEventListener('click', () => this._openFilterCatalog());
+    this.el.btnCloseFilters.addEventListener('click', () => this.el.filtersModal.classList.add('hidden'));
+    this.el.filtersModal.addEventListener('click', (e) => {
+      if (e.target === this.el.filtersModal) this.el.filtersModal.classList.add('hidden');
+    });
+    this.el.filterSearchInput.addEventListener('input', (e) => {
+      this.catalogQuery = e.target.value;
+      this._renderCatalogGrid();
+    });
+
     // Keyboard shutter support (Spacebar when no modal open)
     window.addEventListener('keydown', (e) => {
       if (
         e.code === 'Space' &&
         document.activeElement?.tagName !== 'INPUT' &&
         this.el.labModal.classList.contains('hidden') &&
+        this.el.filtersModal.classList.contains('hidden') &&
         this.el.galleryModal.classList.contains('hidden') &&
         this.el.lightboxModal.classList.contains('hidden')
       ) {
@@ -499,6 +792,7 @@ class RetroCameraApp {
         this.el.standby.classList.add('hidden');
       }
       this._resizeCanvas();
+      setTimeout(() => this._refreshVisiblePreviews(), 250);
     } catch (err) {
       if (userTriggered) {
         this._showToast('Camera permission denied or no webcam found');
@@ -534,6 +828,7 @@ class RetroCameraApp {
       this.el.standby.classList.add('hidden');
       this.el.importedBanner.classList.remove('hidden');
       this._resizeCanvas();
+      this._refreshVisiblePreviews();
       this._showToast('Photo loaded — pick a film stock & press shutter');
     };
     img.onerror = () => {
@@ -549,6 +844,7 @@ class RetroCameraApp {
     if (!this.stream) {
       this.el.standby.classList.remove('hidden');
     }
+    this._refreshVisiblePreviews();
   }
 
   _handleTapFocus(e) {
@@ -594,6 +890,7 @@ class RetroCameraApp {
   }
 
   _startRenderLoop() {
+    let lastThumbRefresh = 0;
     const loop = (now) => {
       const src = this._getCurrentSource();
       if (src) {
@@ -609,6 +906,10 @@ class RetroCameraApp {
           lightLeakSeed: this.activeLeakSeed,
           time: now * 0.001,
         });
+        if (!this.importedImage && now - lastThumbRefresh > 450) {
+          lastThumbRefresh = now;
+          this._refreshVisiblePreviews();
+        }
       }
       requestAnimationFrame(loop);
     };

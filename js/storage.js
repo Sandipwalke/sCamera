@@ -12,6 +12,8 @@ const STORE_NAME = 'photos';
 
 export const DEFAULT_SETTINGS = {
   filterId: 'kodak-gold',
+  filterCategory: 'all',
+  favoriteFilterIds: ['kodak-gold', 'portra-400', 'cinestill-800t'],
   aspectRatio: '4:3',
   exposure: 0,
   grainIntensity: 1.0,
