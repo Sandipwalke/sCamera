@@ -587,6 +587,11 @@ class RetroCameraApp {
     this.el.btnFilmNext.addEventListener('click', () => {
       this.el.carousel.scrollBy({ left: 280, behavior: 'smooth' });
     });
+    let scrollTimer = null;
+    this.el.carousel.addEventListener('scroll', () => {
+      clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(() => this._refreshVisiblePreviews(), 100);
+    }, { passive: true });
     this.el.btnCloseFilters.addEventListener('click', () => this.el.filtersModal.classList.add('hidden'));
     this.el.filtersModal.addEventListener('click', (e) => {
       if (e.target === this.el.filtersModal) this.el.filtersModal.classList.add('hidden');
@@ -834,7 +839,10 @@ class RetroCameraApp {
     this._persistSettings();
     this._syncUI();
     const chip = this.el.carousel.querySelector(`[data-item-id="${id}"]`);
-    chip?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    if (chip) {
+      this._renderThumbForElement(chip);
+      chip.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
   }
 
   _cycleAspect() {
